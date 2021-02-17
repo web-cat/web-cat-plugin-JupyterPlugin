@@ -1,0 +1,95 @@
+{
+    name             = JupyterPlugin;
+    version.major    = 0;
+    version.minor    = 1;
+    version.revision = 0;
+    version.date     = 20190129;
+    requires         = ( PerlForPlugins );
+    provider         = "Virginia Tech Computer Science";
+    provider.url     = "http://web-cat.cs.vt.edu/updates";
+    license          = "GNU Affero General Public License v.3";
+    license.url      = "http://www.gnu.org/copyleft/agpl.html";
+    copyright        = "(c) 2019 Virginia Tech Department of Computer Science";
+    info.url         = "http://web-cat.cs.vt.edu/WCWiki/JupyterPlugin";
+    history.url      = "http://web-cat.cs.vt.edu/WCWiki/JupyterPlugin/ChangeHistory";
+    executable = execute.pl;
+    interpreter.prefix = "${PerlForPlugins.perl.exe}";
+    author     = "Stephen Edwards (edwards@cs.vt.edu)";
+    authorUid  = edwards;
+    languages  = ( { name = "Python"; version = "Python 3.6"; } );
+    description = "This Python execution script is a stub for grading Jupyter
+    notebook assignments.";
+    timeoutMultiplier = 2;
+    timeoutInternalPadding = 400;
+    assignmentOptions = (
+        {
+            property    = instructorUnitTest;
+            type        = file;
+            fileTypes   = ( ipynb );
+            name        = "Instructor Reference Tests";
+            description =
+  "Jupyter notebook (in .ipynb format) containing instructor-written tests
+  used for grading the student notebook. This instructor notebook should use
+  nbgrader-style metadata markup for automatic grading blocks.";
+        },
+        {
+            property    = localFiles;
+            type        = fileOrDir;
+            name        = "Data Files for Student";
+            description =
+  "A file (or a directory of files) to place in the student's current working
+  directory when running his/her tests and when running reference tests.  The
+  file you select (or the entire contents of the directory you select) will be
+  copied into the current working directory during grading so that
+  student-written and instructor-written test cases can read from and/or
+  write to the file(s).  The default is to copy no files.";
+        }
+    );
+    optionCategories = (
+        "Scoring Settings",
+        "Feedback Settings",
+        "Python Settings",
+        "Script Developer"
+    );
+    options = (
+        {
+            property    = debug;
+            type        = integer;
+            advanced    = true;
+            default     = 0;
+            name        = "Debug Level";
+            category    = "Script Developer";
+            description =
+  "Set to a non-zero value for the script to produce debugging output (the
+  larger the number, the greater the detail, up to about 5).  Debugging output
+  on each grading script run will be e-mailed to the instructor.";
+        }
+    );
+    globalOptions = (
+        {
+            property    = pythonCmd;
+            type        = shortText;
+            name        = "Python Interpreter Command";
+            default     = "python";
+            size = 20;
+            description =
+  "The name of the python interpreter to use.  The default is \"python\".  On
+  systems with multiple python interpreters installed, you can use this
+  to specify a specific command (such as \"python3.3\") in order to select
+  the desired version to use with plug-in native python execution.  The
+  plug-in requires that unittest already be installed in python's packages
+  (it comes as a built-in module in modern versions of python).";
+        },
+        {
+            property    = pythonBinPath;
+            type        = shortText;
+            name        = "Command Path";
+            size = 20;
+            description =
+  "An optional directory (or path) to be prepended to the command path for
+  Python grading. This can be used to adjust which python installation is
+  in force when the python command is executed.";
+        }
+    );
+}
+
