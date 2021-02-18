@@ -2,8 +2,8 @@
     name             = JupyterPlugin;
     version.major    = 0;
     version.minor    = 1;
-    version.revision = 0;
-    version.date     = 20190129;
+    version.revision = 1;
+    version.date     = 20210217;
     requires         = ( PerlForPlugins );
     provider         = "Virginia Tech Computer Science";
     provider.url     = "http://web-cat.cs.vt.edu/updates";

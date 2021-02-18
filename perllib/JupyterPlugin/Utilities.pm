@@ -191,13 +191,14 @@ sub extract_imports {
 
     for my $cell (@{$contents->{'cells'}})
     {
-        if ($cell->{'cell_type'} eq 'code'
-            && !$cell->{'metadata'}->{'nbgrader'}->{'grade'})
+        if ($cell->{'cell_type'} eq 'code')
+            # && !$cell->{'metadata'}->{'nbgrader'}->{'grade'})
         {
             my $lines = $cell->{'source'};
             for my $line (@{$lines})
             {
-                if ($line =~ /^import\s/o)
+                if ($line =~ /^(from\s+\S+\s+)?import\s/o
+                    && $line !~ /^import\s+(sys|pythy|nose\.tools)\s*$/o)
                 {
                     $result .= $line;
                 }
@@ -223,12 +224,14 @@ sub extract_tests {
             $test_counter++;
             my $id = $cell->{'metadata'}->{'nbgrader'}->{'grade_id'};
             my $points = $cell->{'metadata'}->{'nbgrader'}->{'points'};
+            my $descr = $id;
+            $descr =~ s/^(Deduct|DEDUCT)_//o;
             
             push(@{$result}, "  # -----------------------------------------"
                 . "--------------------\n");
             push(@{$result}, 
                 "  def test_$test_counter(self):\n");
-            push(@{$result}, "    \"\"\"$id\"\"\"\n");
+            push(@{$result}, "    \"\"\"$descr\"\"\"\n");
 
             my $lines = $cell->{'source'};
             my %names = ();
@@ -246,7 +249,10 @@ sub extract_tests {
             }
             for my $line (@{$lines})
             {
-                push(@{$result}, '    ' . $line);
+                if ($line !~ /^(from\s+\S+\s+)?import\s/o)
+                {
+                    push(@{$result}, '    ' . $line);
+                }
             }
             push(@{$result}, pop(@{$result}) . "\n");
 

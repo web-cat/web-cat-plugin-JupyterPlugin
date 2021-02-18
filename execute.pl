@@ -256,10 +256,15 @@ class JupyterInstructorTests(pythy.TestCase):
   def student_file_name(self):
     return '$student_src'
 
+  # -------------------------------------------------------------
+  def student_notebook(self):
+    return '$studentNotebook'
+
 
 END
     for my $line (@{$lines})
     {
+        $line =~ s/\b(setup_environment\(.*)(\)\s*:')/$1, main_file=student_notebook()$2/g;
         print TESTS $line;
     }
     close(TESTS);
@@ -350,15 +355,27 @@ if ($can_proceed)
         for my $test (@{$results->{'tests'}})
         {
             print $test->{'name'}, "\n" if $debug;
+            # print "name = ", $test->{'name'}, "\n";
+            # print "id = ", $test->{'nbgrader_id'}, "\n";
+            # print "desc = ", $test->{'description'}, "\n";
+            # print "pts = ", $test->{'points'}, "\n";
+            my $isDeduction = ($test->{'nbgrader_id'} =~ m/^(Deduct|DEDUCT)_/o);
             if ($test->{'result'} eq 'success')
             {
-                $score += $test->{'points'};
-                studentLog("<li class=\"complete\">"
-                    . nl_expand(htmlEscape($test->{'description'}))
-                    . "</li>");
+                if (!$isDeduction)
+                {
+                    $score += $test->{'points'};
+                    studentLog("<li class=\"complete\">"
+                        . nl_expand(htmlEscape($test->{'description'}))
+                        . "</li>");
+                }
             }
             else
             {
+                if ($isDeduction)
+                {
+                    $score -= $test->{'points'};
+                }
                 studentLog("<li class=\"incomplete\">");
                 if ($test->{'points'})
                 {
