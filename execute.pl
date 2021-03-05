@@ -100,7 +100,6 @@ my $debug                   = $cfg->getProperty('debug', 0);
 #-------------------------------------------------------
 #   Other local variables within this script
 #-------------------------------------------------------
-my $studentNotebookName = "";
 my $studentNotebook  = "$resultDir/notebook.ipynb";
 my $student_src      = "$resultDir/notebook.py";
 my $can_proceed      = 1;
@@ -196,7 +195,7 @@ my $pngCount = 0;
     }
     else
     {
-        $studentNotebookName = $sources[0];
+        my $studentNotebookName = $sources[0];
         if ($#sources > 0)
         {
             studentLog( "<p>Multiple Python source files present.  Using ",
