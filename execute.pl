@@ -100,8 +100,9 @@ my $debug                   = $cfg->getProperty('debug', 0);
 #-------------------------------------------------------
 #   Other local variables within this script
 #-------------------------------------------------------
-my $studentNotebook  = "";
-my $student_src      = "";
+my $studentNotebookName = "";
+my $studentNotebook  = "$resultDir/notebook.ipynb";
+my $student_src      = "$resultDir/notebook.py";
 my $can_proceed      = 1;
 my $timeout_occurred = 0;
 my $score            = 0;
@@ -195,18 +196,17 @@ my $pngCount = 0;
     }
     else
     {
-        $studentNotebook = $sources[0];
+        $studentNotebookName = $sources[0];
         if ($#sources > 0)
         {
             studentLog( "<p>Multiple Python source files present.  Using ",
-                "$student_src.\nIgnoring other Python files.",
+                "$studentNotebook.\nIgnoring other Python files.",
                 "</p>\n");
             $can_proceed = 0;
         }
         else
         {
-            $student_src = $studentNotebook;
-            $student_src =~ s/.ipynb$/.py/io;
+            copy($studentNotebookName, $studentNotebook);
             my $notebook = load_notebook($studentNotebook);
             my $lines = extract_solution($notebook);
 
