@@ -1,0 +1,19 @@
+ame: Build and push container image tagged with branch name
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build and push Docker image to GitHub Package Registry
+      uses: docker/build-push-action@v7
+      with:
+        repository: ${{ github.repository }}
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        registry: ghcr.io
+        tag_with_ref: true
