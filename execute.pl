@@ -20,9 +20,6 @@ use Web_CAT::Utilities
        scanThrough linesFromFile addReportFileWithStyle $FILE_SEPARATOR
        $PATH_SEPARATOR);
 
-# Plugin-specific modules
-use lib dirname(__FILE__) . '/perllib';
-use JupyterPlugin::Utilities;
 use JSON;
 
 # PyUnitResultsReader: a hoped-for future development
@@ -54,6 +51,12 @@ my $propfile     = $ARGV[0];   # property file name
 my $cfg          = Config::Properties::Simple->new(file => $propfile);
 
 my $pluginHome   = $cfg->getProperty('pluginHome');
+
+# Plugin-specific modules
+unshift(@INC, "$pluginHome/perllib");
+require JupyterPlugin::Utilities;
+JupyterPlugin::Utilities->import;
+
 my $workingDir   = $cfg->getProperty('workingDir');
 my $resultDir    = $cfg->getProperty('resultDir');
 my $scriptData   = $cfg->getProperty('scriptData', '.');
@@ -102,6 +105,8 @@ my $debug                   = $cfg->getProperty('debug', 0);
 #-------------------------------------------------------
 my $studentNotebook  = "$resultDir/notebook.ipynb";
 my $student_src      = "$resultDir/notebook.py";
+my $workNotebook     = "$workingDir/notebook.ipynb";
+my $workSrc          = "$workingDir/notebook.py";
 my $can_proceed      = 1;
 my $timeout_occurred = 0;
 my $score            = 0;
@@ -147,16 +152,10 @@ print "working dir set to $workingDir\n" if $debug;
         $ENV{'PATH'} = $cmdPath . ':' . $ENV{'PATH'};
     }
 
-    #  Add script home to PYTHONPATH.
-    if (! defined($ENV{'PYTHONPATH'}) || $ENV{'PYTHONPATH'} eq "")
-    {
-       $ENV{'PYTHONPATH'} = "$resultDir/pythonlib:$pluginHome/pythonlib:.:src";
-    }
-    else
-    {
-       $ENV{'PYTHONPATH'} = "$resultDir/pythonlib:$pluginHome/pythonlib:"
-         . $ENV{'PYTHONPATH'} . ":.:src";
-    }
+    # The student code script sets its own PYTHONPATH. Python run as the
+    # instructor (nbconvert) must not import modules from the working
+    # directory, which the student controls.
+    delete $ENV{'PYTHONPATH'};
     if ($debug)
     {
         print "PYTHON CMD   = $python\n",
@@ -216,7 +215,9 @@ my $pngCount = 0;
                 print SRC $line;
             }
             close(SRC);
-            
+            copy($studentNotebook, $workNotebook);
+            copy($student_src, $workSrc);
+
             mkdir("$resultDir/public");
             $pngCount = extract_images($notebook, $cfg);
         }
@@ -253,11 +254,11 @@ class JupyterInstructorTests(pythy.TestCase):
 
   # -------------------------------------------------------------
   def student_file_name(self):
-    return '$student_src'
+    return '$workSrc'
 
   # -------------------------------------------------------------
   def student_notebook(self):
-    return '$studentNotebook'
+    return '$workNotebook'
 
 
 END
@@ -267,6 +268,7 @@ END
         print TESTS $line;
     }
     close(TESTS);
+    copy($testFile, "$workingDir/instructor_tests.py");
 }
 
 
@@ -309,7 +311,8 @@ if ($can_proceed)
 {
     my $outfile = $resultDir . "/instr-out.txt";
     my $cmdline = "$Web_CAT::Utilities::SHELL"
-        . "$python -m pythy.runner > \"$outfile\"  2>&1";
+        . "exec sudo -u student -T " . ($timeout + 5)
+        . " /plugin/student_code > \"$outfile\"  2>&1";
 
     print "cmdline = ", $cmdline, "\n" if $debug;
 
