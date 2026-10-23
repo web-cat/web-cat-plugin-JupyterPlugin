@@ -13,7 +13,8 @@ RUN apt-get update \
 	&& rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 60001 instructor \
-	&& useradd -m -u 60002 student
+	&& useradd -m -u 60002 student \
+	&& usermod -aG student instructor
 
 RUN mkdir -m 755 -p /plugin \
 	&& mkdir -m 700 -p /plugin/instructor_input /plugin/results \
