@@ -5,6 +5,7 @@ ARG PLUGIN_ENTRYPOINT=./plugin/plugin.pl
 ARG PLUGIN_ENTRYPOINT_ARGS=""
 ARG PLUGIN_DIR=./plugin
 ARG STUDENT_CODE_SCRIPT=./student_code.sh
+ARG STUDENT_DIR=./student
 
 ENV PLUGIN_ENTRYPOINT_ARGS=$PLUGIN_ENTRYPOINT_ARGS
 
@@ -27,8 +28,9 @@ VOLUME /plugin/instructor_input /plugin/student_input /plugin/results
 
 COPY --chmod=0440 sudoers /etc/sudoers
 
-COPY --chown=instructor:student --chmod=750 $PLUGIN_DIR /plugin/home/
+COPY --chown=instructor:student --chmod=750 $PLUGIN_DIR /plugin/plugin_dir/
 COPY --chown=instructor:instructor --chmod=700 $PLUGIN_ENTRYPOINT /plugin/entrypoint
+COPY --chown=instructor:student --chmod=750 $STUDENT_DIR /plugin/student_dir/
 COPY --chown=instructor:student --chmod=550 $STUDENT_CODE_SCRIPT /plugin/student_code
 
 COPY --chmod=0755 $DEPENDENCIES_SCRIPT /tmp/dependencies

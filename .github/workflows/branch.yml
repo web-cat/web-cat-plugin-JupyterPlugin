@@ -11,8 +11,15 @@ jobs:
     - uses: actions/checkout@v7
     - name: Build and push Docker image to GitHub Package Registry
       uses: elgohr/Publish-Docker-Github-Action@v5
+      env:
+        DEPENDENCIES_SCRIPT: ./dependencies.sh
+        PLUGIN_ENTRYPOINT: ./execute.pl
+        PLUGIN_DIR: ./plugin
+        STUDENT_CODE_SCRIPT: ./student_code.sh
+        STUDENT_DIR: ./student
       with:
         name: ${{ github.repository }}
         username: ${{ github.repository_owner }}
         password: ${{ secrets.GITHUB_TOKEN }}
         registry: ghcr.io
+        buildargs: DEPENDENCIES_SCRIPT,PLUGIN_ENTRYPOINT,PLUGIN_DIR,STUDENT_CODE_SCRIPT,STUDENT_DIR
