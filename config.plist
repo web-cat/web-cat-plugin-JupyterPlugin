@@ -1,17 +1,17 @@
 {
     name             = JupyterPlugin;
-    version.major    = 0;
-    version.minor    = 1;
-    version.revision = 1;
-    version.date     = 20210217;
+    version.major    = 1;
+    version.minor    = 0;
+    version.revision = 0;
+    version.date     = 20261031;
     requires         = ( PerlForPlugins );
     provider         = "Virginia Tech Computer Science";
     provider.url     = "http://web-cat.cs.vt.edu/updates";
     license          = "GNU Affero General Public License v.3";
     license.url      = "http://www.gnu.org/copyleft/agpl.html";
-    copyright        = "(c) 2019 Virginia Tech Department of Computer Science";
-    info.url         = "http://web-cat.cs.vt.edu/WCWiki/JupyterPlugin";
-    history.url      = "http://web-cat.cs.vt.edu/WCWiki/JupyterPlugin/ChangeHistory";
+    copyright        = "(c) 2019-2026 Virginia Tech Department of Computer Science";
+    info.url         = "https://github.com/web-cat/web-cat-plugin-JupyterPlugin";
+    history.url      = "https://github.com/web-cat/web-cat-plugin-JupyterPlugin";
     executable = execute.pl;
     interpreter.prefix = "${PerlForPlugins.perl.exe}";
     author     = "Stephen Edwards (edwards@cs.vt.edu)";
@@ -81,8 +81,8 @@
             property    = containerImage;
             type        = shortText;
             name        = "Container Image";
-            default     = "webcat/jupyter-plugin:latest";
-            size        = 30;
+            default     = "ghcr.io/web-cat/python-runner:latest";
+            size        = 60;
             description =
   "The Docker/Podman container image name to use for grading submissions.";
         },

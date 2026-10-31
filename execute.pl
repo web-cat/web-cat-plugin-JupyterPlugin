@@ -107,7 +107,7 @@ my $timeout_occurred = 0;
 my $score            = 0;
 my $python           = $cfg->getProperty('pythonCmd', 'python');
 my $execEngine       = $cfg->getProperty('executionEngine', 'docker');
-my $containerImage   = $cfg->getProperty('containerImage', 'webcat/jupyter-plugin:latest');
+my $containerImage   = $cfg->getProperty('containerImage', 'ghcr.io/web-cat/python-runner:1.0.0');
 my $containerArgs    = $cfg->getProperty('containerArgs', '--network none --memory 1g --cpus 1.0 --pids-limit 100');
 
 
