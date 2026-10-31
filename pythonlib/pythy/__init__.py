@@ -1,13 +1,9 @@
 """
-Pythy server-side support module.
-
-This module contains core classes used by Pythy when student code is
-executed on the server (such as when reference tests are being checked).
+Pythy server-side grading support module.
 """
 
-
-__all__ = ['TestCase', 'TestRunner', 'runAllTests']
+__all__ = ['TestCase', 'TestRunner', 'runAllTests', 'category']
 
 __pythy = True
 
-from .test import TestCase, TestRunner, runAllTests
+from .test import TestCase, TestRunner, runAllTests, category

@@ -67,6 +67,35 @@
     );
     globalOptions = (
         {
+            property    = executionEngine;
+            type        = shortText;
+            name        = "Execution Engine";
+            default     = "docker";
+            size        = 10;
+            description =
+  "The execution environment: 'docker' (for development/Docker-enabled systems),
+  'podman' (for production servers with rootless Podman), or 'host' (direct host
+  execution). Default is 'docker'.";
+        },
+        {
+            property    = containerImage;
+            type        = shortText;
+            name        = "Container Image";
+            default     = "webcat/jupyter-plugin:latest";
+            size        = 30;
+            description =
+  "The Docker/Podman container image name to use for grading submissions.";
+        },
+        {
+            property    = containerArgs;
+            type        = shortText;
+            name        = "Container Isolation Arguments";
+            default     = "--network none --memory 1g --cpus 1.0 --pids-limit 100";
+            size        = 60;
+            description =
+  "Resource limit and security arguments passed to 'docker run' or 'podman run'.";
+        },
+        {
             property    = pythonCmd;
             type        = shortText;
             name        = "Python Interpreter Command";

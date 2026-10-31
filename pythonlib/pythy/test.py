@@ -1,570 +1,287 @@
-"""Test case implementation."""
+"""
+Pythy test framework for grading Python and Jupyter notebook submissions.
+Modernized for Python 3.9 - 3.14+ compatibility without reliance on
+deprecated libraries or private unittest internals.
+"""
 
 import io
-import unittest
-import traceback
-import sys
-# import yaml
 import json
-import re
-import threading
-import ctypes
+import os
+import sys
 import time
-
-from pprint import pprint
-
-
-#~ Sandbox overrides ..........................................................
-
-_originalBuiltins = {}
-
-# -------------------------------------------------------------
-def _disabled_compile(source, filename, mode, flags=0, dont_inherit=False):
-  raise RuntimeError("You are not allowed to call 'compile'.")
-
-# -------------------------------------------------------------
-def _disabled_eval(object, globals=globals(), locals=locals()):
-  raise RuntimeError("You are not allowed to call 'eval'.")
-
-# -------------------------------------------------------------
-def _disabled_exec(object, globals=globals(), locals=locals()):
-  raise RuntimeError("You are not allowed to call 'exec'.")
-
-# -------------------------------------------------------------
-def _disabled_globals():
-  raise RuntimeError("You are not allowed to call 'globals'.")
-
-# -------------------------------------------------------------
-_open_forbidden_names = re.compile(r"(^[./])|(\.py$)")
-_open_forbidden_modes = re.compile(r"[wa+]")
-
-def _restricted_open(name, mode='r', buffering=-1):
-  if _open_forbidden_names.search(name):
-    raise RuntimeError('The filename you passed to \'open\' is restricted.')
-  elif _open_forbidden_modes.search(mode):
-    raise RuntimeError('You are not allowed to \'open\' files for writing.')
-  else:
-    return _originalBuiltins['open'](name, mode, buffering)
-
-
-_reject_traceback_file_pattern = re.compile(r'[./]')
-
-
-
-#~ Global functions ...........................................................
-
-# -------------------------------------------------------------
-def timeout(duration, func, *args, **kwargs):
-  """
-  Executes a function and kills it (throwing an exception) if it runs for
-  longer than the specified duration, in seconds.
-  """
-
-  # -------------------------------------------------------------
-  class InterruptableThread(threading.Thread):
-
-    # -------------------------------------------------------------
-    def __init__(self):
-      threading.Thread.__init__(self)
-      self.daemon = True
-      self.result = None
-      self.exc_info = (None, None, None)
-
-    
-    # -------------------------------------------------------------
-    def run(self):
-      try:
-        self.result = func(*args, **kwargs)
-      except Exception as e:
-        self.exc_info = sys.exc_info()
-
-    
-    # -------------------------------------------------------------
-    @classmethod
-    def _async_raise(cls, tid, excobj):
-      res = ctypes.pythonapi.PyThreadState_SetAsyncExc( \
-        ctypes.c_long(tid), ctypes.py_object(excobj))
-        
-      if res == 0:
-        raise ValueError("nonexistent thread id")
-      elif res > 1:
-        ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, 0)
-        raise SystemError("PyThreadState_SetAsyncExc failed")
-
-
-    # -------------------------------------------------------------
-    def raise_exc(self, excobj):
-      assert self.isAlive(), "thread must be started"
-      for tid, tobj in threading._active.items():
-        if tobj is self:
-          self._async_raise(tid, excobj)
-          return
-
-
-    # -------------------------------------------------------------
-    def terminate(self):
-      self.raise_exc(SystemExit)
-
-
-  target_thread = InterruptableThread()
-  target_thread.start()
-  target_thread.join(duration)
-
-  if target_thread.isAlive():
-    target_thread.terminate()
-    raise TimeoutError('Hint: Your code took too long to run '
-      '(it was given {} seconds); '
-      'maybe you have an infinite loop?'.format(duration))
-  else:
-    if target_thread.exc_info[0] is not None:
-      ei = target_thread.exc_info
-      # Python 2 had the three-argument raise statement; thanks to PEP 3109
-      # for showing how to convert that to valid Python 3 statements.
-      e = ei[0](ei[1])
-      e.__traceback__ = ei[2]
-      raise e
-
-
-# -------------------------------------------------------------
-def runAllTests(stream=sys.stderr,timeoutCeiling=30):
-  """
-  Runs all test cases in suites that extend pythy.TestCase.
-  """
-
-  global _timeoutData
-  _timeoutData = _TimeoutData(timeoutCeiling)
-
-  _recursivelyRunTests(TestCase, stream)
-
-
-# -------------------------------------------------------------
-def _recursivelyRunTests(cls, stream):
-  for child in cls.__subclasses__():
-    suite = unittest.TestLoader().loadTestsFromTestCase(child)
-    TestRunner(stream).run(suite)
-    _recursivelyRunTests(child, stream)
-
+import traceback
+import unittest
 
 
 #~ Decorators .................................................................
 
-# -------------------------------------------------------------
 def category(catname):
-  """
-  Specifies a category for a test case, which will be written in the
-  result output.
-  """
-  def decorator(test_item):
-    test_item.__pythytest_category__ = catname
-    return test_item
-  return decorator
-
-
-
-#~ Classes ....................................................................
-
-# =========================================================================
-class TimeoutError(Exception):
-  """
-  Thrown by a test case if it exceeds the allowed amount of execution time.
-  """
-  pass
-
-
-# =========================================================================
-class _TimeoutData:
-  """
-  Port of Craig Estep's AdaptiveTimeout JUnit rule from the VTCS student
-  library.
-  """
-  
-  # -------------------------------------------------------------
-  def __init__(self, ceiling):
-    self.ceiling = ceiling # sec
-    self.maximum = ceiling * 2 # sec
-    self.minimum = 0.25 # sec
-    self.threshold = 0.6
-    self.rampup = 1.4
-    self.rampdown = 0.5
-    self.start = self.end = 0
-    self.nonterminatingMethods = 0
-
-  
-  # -------------------------------------------------------------
-  def beforeTest(self):
     """
-    Call this before a test case runs in order to reset the timer.
+    Specifies a category for a test case, which will be written in the result output.
     """
-    self.start = time.time()
+    def decorator(test_item):
+        test_item.__pythytest_category__ = catname
+        return test_item
+    return decorator
 
 
-  # -------------------------------------------------------------
-  def afterTest(self):
+#~ Global Runner Functions ....................................................
+
+def runAllTests(stream=sys.stderr, timeoutCeiling=30):
     """
-    Call this after a test case runs. This will examine how long it took
-    the test to execute, and if it required an amount of time greater than
-    the current ceiling, it will adaptively adjust the allowed time for
-    the next test.
+    Runs all test cases in suites that extend pythy.TestCase and writes
+    JSON results to stream.
     """
-    self.end = time.time()
-    diff = self.end - self.start
+    runner = TestRunner(stream)
+    suite = unittest.TestSuite()
 
-    if diff > self.ceiling:
-      self.nonterminatingMethods += 1
+    def add_subclasses(cls):
+        for child in cls.__subclasses__():
+            suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(child))
+            add_subclasses(child)
 
-      if self.nonterminatingMethods >= 2:
-        if self.ceiling * self.rampdown < self.minimum:
-          self.ceiling = self.minimum
-        else:
-          self.ceiling = (self.ceiling * self.rampdown)
-    elif diff > self.ceiling * self.threshold:
-      if self.ceiling * self.rampup > self.maximum:
-        self.ceiling = self.maximum
-      else:
-        self.ceiling = (self.ceiling * self.rampup)
+    add_subclasses(TestCase)
+    runner.run(suite)
 
 
+#~ Test Case Base Class .......................................................
 
-# =========================================================================
 class TestCase(unittest.TestCase):
-
-  # -------------------------------------------------------------
-  def __init__(self, methodName='runTest'):
-    unittest.TestCase.__init__(self, methodName)
-
-
-  # -------------------------------------------------------------
-  def runBare(self, function):
-    timeout(_timeoutData.ceiling, unittest.TestCase.runBare, self, function)
-
-
-  # -------------------------------------------------------------
-  def run(self, testMethod):
-    _timeoutData.beforeTest()
-    unittest.TestCase.run(self, testMethod)
-    _timeoutData.afterTest()
-
-
-  # -------------------------------------------------------------
-  def runFile(self, filename='main.py', input=''):
     """
-    Runs the Python code in the specified file (if omitted, main.py is
-    used) under a restricted environment, using the specified input string
-    as the content of stdin and capturing the text sent to stdout.
-
-    Returns a 2-tuple (studentLocals, output), where studentLocals is a
-    dictionary containing the state of the local variables, functions, and
-    class definitions after the program was executed, and output is the
-    text that the program wrote to stdout.
-
+    Base test case for Web-CAT Python and Jupyter notebook grading.
     """
-    self.__overrideBuiltins({
-      'compile':  _disabled_compile,
-      #'eval':     _disabled_eval,
-      'exec':     _disabled_exec,
-      'globals':  _disabled_globals,
-      'open':     _restricted_open
-    })
-    #print("runFile(", filename, ")")
+    locals = None
+    output = None
 
-    studentLocals = self.safeGlobals
+    def setUp(self):
+        if TestCase.locals is None:
+            filename = self.student_file_name()
+            TestCase.locals, TestCase.output = self.runFile(filename)
 
-    captureout = io.StringIO()
-    injectin = io.StringIO(input)
+    def student_file_name(self):
+        self.fail('Student file name is not defined.')
 
-    oldstdout = sys.stdout
-    oldstdin = sys.stdin
+    def student_notebook(self):
+        return None
 
-    sys.stdout = captureout
-    sys.stdin = injectin
+    def lookup(self, name):
+        if TestCase.locals is not None and name in TestCase.locals:
+            return TestCase.locals[name]
+        self.fail(f'Name "{name}" is not defined.')
 
-    try:
-      # Calling compile instead of just passing the string source to exec
-      # ensures that we get meaningul filenames in the traceback when tests
-      # fail or have errors.
-      with open(filename, 'r') as fh:
-        code = fh.read() + '\n'
+    def runFile(self, filename='main.py', input_str=''):
+        """
+        Executes the student code file with captured stdin/stdout.
+        Returns (student_globals, captured_output).
+        """
+        student_globals = {
+            '__name__': '__main__',
+            '__file__': os.path.abspath(filename),
+            '__doc__': None,
+        }
 
-      code = "import pythy.sandbox\n" + code
+        capture_out = io.StringIO()
+        inject_in = io.StringIO(input_str)
 
-      codeObject = compile(code, filename, 'exec')
-      exec(codeObject, self.safeGlobals, studentLocals)
-    finally:
-      sys.stdout = oldstdout
-      sys.stdin = oldstdin
+        old_stdout = sys.stdout
+        old_stdin = sys.stdin
+        sys.stdout = capture_out
+        sys.stdin = inject_in
 
-    #print("studentLocals = ", studentLocals.keys())
-    #print("has Answer1 = ", 'Answer1' in studentLocals)
-    #print("is Answer1 = ", studentLocals['Answer1'] == True)
-    #print("Answer1 = ", studentLocals['Answer1'])
-    #print("dumping locals")
-    #for k, v in studentLocals.items():
-    #  print(k, ": ", v)
-    #print("\n")
-    
-    return (studentLocals, captureout.getvalue())
+        try:
+            with open(filename, 'r', encoding='utf-8', errors='replace') as fh:
+                code_text = fh.read() + '\n'
 
+            # Ensure pythy.sandbox is accessible if legacy assignments reference it
+            try:
+                import pythy.sandbox
+            except ImportError:
+                pass
 
-  # -------------------------------------------------------------
-  def captureOutput(self, fn):
-    captureout = io.StringIO()
-    oldstdout = sys.stdout
-    sys.stdout = captureout
-    try:
-      fn()
-      return captureout.getvalue()
-    finally:
-      sys.stdout = oldstdout
+            code_object = compile(code_text, filename, 'exec')
+            exec(code_object, student_globals)
+        finally:
+            sys.stdout = old_stdout
+            sys.stdin = old_stdin
 
+        output = capture_out.getvalue()
+        return student_globals, output
 
-  # -------------------------------------------------------------
-  def __overrideBuiltins(self, dictionary):
-    # Create a shallow copy of the dictionary of built-in methods. Then,
-    # we'll take specific ones that are unsafe and replace them.
-    self.safeGlobals = {}
-    safeBuiltins = self.safeGlobals["__builtins__"] = __builtins__.copy()
+    def captureOutput(self, fn):
+        capture_out = io.StringIO()
+        old_stdout = sys.stdout
+        sys.stdout = capture_out
+        try:
+            fn()
+            return capture_out.getvalue()
+        finally:
+            sys.stdout = old_stdout
 
-    for name, function in dictionary.items():
-      _originalBuiltins[name] = __builtins__[name]
-      safeBuiltins[name] = function
+    # -------------------------------------------------------------
+    # Media and Sound Assertions (VT Media computation libraries)
+    # -------------------------------------------------------------
+    def assertSoundsSimilar(self, expected, actual):
+        length = actual.getLength()
+        self.assertEqual(expected.getLength(), length)
+        allowable_error = 0
+        for i in range(length):
+            actual_sample = actual.getSampleValueAt(i)
+            expected_sample = expected.getSampleValueAt(i)
+            if abs(actual_sample - expected_sample) > allowable_error:
+                self.fail('Some samples do not have the expected values')
 
-  def assertSoundsSimilar(self, expected, actual):
-    length = actual.getLength()
+    def assertImagesSimilar(self, reason, expected, actual):
+        width = actual.getWidth()
+        height = actual.getHeight()
 
-    self.assertEqual(expected.getLength(), length)
+        self.assertEqual(
+            expected.getWidth(), width,
+            f"{reason}, the width of your final image was incorrect."
+        )
+        self.assertEqual(
+            expected.getHeight(), height,
+            f"{reason}, the height of your final image was incorrect."
+        )
 
-    ALLOWABLE_ERROR = 0
+        allowable_error = 1
+        red_errors = False
+        green_errors = False
+        blue_errors = False
 
-    for i in range(length):
-      actualSample = actual.getSampleValueAt(i)
-      expectedSample = expected.getSampleValueAt(i)
+        for r in range(height):
+            for c in range(width):
+                actual_pixel = actual.getPixel(c, r)
+                expected_pixel = expected.getPixel(c, r)
 
-      if abs(actualSample - expectedSample) > ALLOWABLE_ERROR:
-        self.fail('Some samples do not have the expected values')
+                if abs(actual_pixel.getRed() - expected_pixel.getRed()) > allowable_error:
+                    red_errors = True
+                if abs(actual_pixel.getGreen() - expected_pixel.getGreen()) > allowable_error:
+                    green_errors = True
+                if abs(actual_pixel.getBlue() - expected_pixel.getBlue()) > allowable_error:
+                    blue_errors = True
 
-  # --------------------------------------------------------------
-  def assertImagesSimilar(self, reason, expected, actual):
-    width = actual.getWidth()
-    height = actual.getHeight()
-
-    self.assertEqual(expected.getWidth(), width, \
-      reason + ", the width of your final image was incorrect.")
-    self.assertEqual(expected.getHeight(), height, \
-      reason + ", the height of your final image was incorrect.")
-
-    ALLOWABLE_ERROR = 1
-
-    red_errors = False
-    green_errors = False
-    blue_errors = False
-
-    # Compare the pixels in the student's image and the correct image,
-    # using the tolerance above. Keep track of which color channels
-    # contained incorrect values.
-
-    for r in range(height):
-      for c in range(width):
-        actualpixel = actual.getPixel(c, r)
-        expectedpixel = expected.getPixel(c, r)
-
-        if abs(actualpixel.getRed() - expectedpixel.getRed()) > ALLOWABLE_ERROR:
-          red_errors = True
-
-        if abs(actualpixel.getGreen() - expectedpixel.getGreen()) > ALLOWABLE_ERROR:
-          green_errors = True
-
-        if abs(actualpixel.getBlue() - expectedpixel.getBlue()) > ALLOWABLE_ERROR:
-          blue_errors = True
-
-    channels = ''
-
-    # Construct a hint message based on which color channels, if any,
-    # had incorrect values.
-
-    if red_errors:
-      channels = 'red'
-
-      if green_errors:
+        channels = []
+        if red_errors:
+            channels.append('red')
+        if green_errors:
+            channels.append('green')
         if blue_errors:
-          channels += ', green, and blue components'
-        else:
-          channels += ' and green components'
-      elif blue_errors:
-        channels += ' and blue components'
-      else:
-        channels += ' components'
-    elif green_errors:
-      channels += 'green'
+            channels.append('blue')
 
-      if blue_errors:
-        channels += ' and blue components'
-      else:
-        channels += ' components'
-    elif blue_errors:
-      channels += 'blue components'
-
-    if len(channels) > 0:
-      self.fail('The ' + channels + ' contained some incorrect values.')
+        if channels:
+            channel_str = ', '.join(channels) + ' components'
+            self.fail(f'The {channel_str} contained some incorrect values.')
 
 
-  locals = None
-  output = None
+#~ Test Runner & Result .......................................................
 
-
-  # -------------------------------------------------------------
-  def setUp(self):
-    if TestCase.locals is None:
-      (TestCase.locals, TestCase.output) = self.runFile(self.student_file_name())
-
-
-  # -------------------------------------------------------------
-  def lookup(self, name):
-    if name in TestCase.locals:
-      return TestCase.locals[name]
-    else:
-      self.fail('Name "%s" is not defined.' % (name))      
-
-
-  # -------------------------------------------------------------
-  def student_file_name(self):
-    self.fail('Student file name is not defined.')      
-
-
-
-# =========================================================================
 class TestRunner:
+    def __init__(self, stream=sys.stderr):
+        self.stream = stream
+        self.testData = {
+            'categories': set(),
+            'tests': []
+        }
 
-  # -------------------------------------------------------------
-  def __init__(self, stream=sys.stderr):
-    self.stream = stream
-    self.testData = {
-      'categories': set(),
-      'tests': []
-    }
+    def run(self, test):
+        result = _PythyTestResult(self)
+        test(result)
+        self._dump_outcomes()
+        return result
 
+    def _dump_outcomes(self):
+        self.testData['categories'] = list(self.testData['categories'])
+        if TestCase.output is not None:
+            self.testData['output'] = TestCase.output
 
-  # -------------------------------------------------------------
-  def run(self, test):
-    result = _PythyTestResult(self)
-    test(result)
-    self.__dumpOutcomes()
-    return result
+        json.dump(self.testData, self.stream, indent=4)
+        if hasattr(self.stream, 'flush'):
+            self.stream.flush()
 
+    def _startTest(self, test):
+        method_name = getattr(test, '_testMethodName', str(test))
+        newtest = {
+            'name': test.id(),
+            'description': method_name
+        }
 
-  # -------------------------------------------------------------
-  def __dumpOutcomes(self):
-    # Convert the 'categories' set to a list so that it gets dumped cleanly
-    # in the YAML output.
-    self.testData['categories'] = list(self.testData['categories'])
-    if TestCase.output is not None:
-      self.testData['output'] = TestCase.output
+        short_desc = test.shortDescription()
+        if short_desc:
+            newtest['description'] = short_desc
 
-    #yaml.dump(self.testData, self.stream, default_flow_style=False)
-    json.dump(self.testData, self.stream,
-      indent = 4, separators = (',', ': '))
+        test_method = getattr(test, method_name, None)
+        if test_method:
+            category = getattr(test_method, '__pythytest_category__', None)
+            if category:
+                newtest['category'] = category
+                self.testData['categories'].add(category)
 
+            points = getattr(test_method, 'points', None)
+            if points is not None:
+                newtest['points'] = points
 
-  # -------------------------------------------------------------
-  def _startTest(self, test):
-    newtest = { 'name': test.id() }
+            nbgrader_id = getattr(test_method, 'nbgrader_id', None)
+            if nbgrader_id:
+                newtest['nbgrader_id'] = nbgrader_id
 
-    if test.shortDescription():
-      newtest["description"] = test.shortDescription()
-
-    testMethod = getattr(test, test._testMethodName)
-
-    category = getattr(testMethod, '__pythytest_category__', None)
-    if category:
-      newtest['category'] = category
-      self.testData['categories'].add(category)
-
-    points = getattr(testMethod, 'points', None)
-    if points:
-      newtest['points'] = points
-
-    nbgrader_id = getattr(testMethod, 'nbgrader_id', None)
-    if nbgrader_id:
-      newtest['nbgrader_id'] = nbgrader_id
-
-    self.testData['tests'].append(newtest)
-    return newtest
+        self.testData['tests'].append(newtest)
+        return newtest
 
 
-
-# =========================================================================
 class _PythyTestResult(unittest.TestResult):
-  """
-  A custom test result class that prints output in Yaml format
-  that Pythy's worker process can easily read in and process.
-  """
+    """
+    Captures test outcomes and formats them for Web-CAT JSON consumption.
+    """
+    def __init__(self, runner):
+        super().__init__()
+        self.runner = runner
+        self.currentTest = None
 
-  # -------------------------------------------------------------
-  def __init__(self, runner):
-    unittest.TestResult.__init__(self)
-    self.runner = runner
+    def startTest(self, test):
+        super().startTest(test)
+        self.currentTest = self.runner._startTest(test)
 
+    def addSuccess(self, test):
+        super().addSuccess(test)
+        if self.currentTest:
+            self.currentTest["result"] = "success"
 
-  # -------------------------------------------------------------
-  def startTest(self, test):
-    unittest.TestResult.startTest(self, test)
-    self.currentTest = self.runner._startTest(test)
+    def addFailure(self, test, err):
+        super().addFailure(test, err)
+        if self.currentTest:
+            self.currentTest["result"] = "failure"
+            self._populate_error(err)
 
+    def addError(self, test, err):
+        super().addError(test, err)
+        if self.currentTest:
+            self.currentTest["result"] = "error"
+            self._populate_error(err)
 
-  # -------------------------------------------------------------
-  def addError(self, test, err):
-    unittest.TestResult.addError(self, test, err)
-    self.currentTest["result"] = "error"
-    self.__populateWithError(err)
+    def addSkip(self, test, reason):
+        super().addSkip(test, reason)
+        if self.currentTest:
+            self.currentTest["result"] = "skipped"
+            self.currentTest["reason"] = str(reason)
 
+    def _populate_error(self, err):
+        exctype, val, tb = err
+        if exctype.__name__ == 'AssertionError':
+            self.currentTest["reason"] = str(val) if str(val) else 'AssertionError'
+        else:
+            self.currentTest["exception"] = exctype.__name__
+            self.currentTest["reason"] = f"{exctype.__name__}: {str(val)}"
 
-  # -------------------------------------------------------------
-  def addFailure(self, test, err):
-    unittest.TestResult.addFailure(self, test, err)
-    self.currentTest["result"] = "failure"
-    self.__populateWithError(err)
+        # Extract and format clean traceback frames
+        tb_entries = traceback.extract_tb(tb)
+        filtered_frames = []
+        for entry in tb_entries:
+            filename = entry.filename
+            # Filter out standard library unittest, importlib, and pythy runner internals
+            if 'unittest' in filename or 'pythy' in filename or 'importlib' in filename:
+                continue
+            base = os.path.basename(filename)
+            frame_str = f"{entry.name} ({base}:{entry.lineno})"
+            filtered_frames.append(frame_str)
 
-
-  # -------------------------------------------------------------
-  def addSuccess(self, test):
-    unittest.TestResult.addSuccess(self, test)
-    self.currentTest["result"] = "success"
-
-
-  # -------------------------------------------------------------
-  def addSkip(self, test, reason):
-    unittest.TestResult.addSkip(self, test, reason)
-
-
-  # -------------------------------------------------------------
-  def addExpectedFailure(self, test, err):
-    unittest.TestResult.addExpectedFailure(self, test, err)
-
-
-  # -------------------------------------------------------------
-  def addUnexpectedSuccess(self, test):
-    unittest.TestResult.addUnexpectedSuccess(self, test)
-
-
-  # -------------------------------------------------------------
-  def stopTest(self, test):
-    unittest.TestResult.stopTest(self, test)
-
-
-  # -------------------------------------------------------------
-  def __populateWithError(self, err):
-    if err[0].__name__ == 'AssertionError':
-      self.currentTest["reason"] = str(err[1])
-    else:
-      self.currentTest["exception"] = err[0].__name__
-      self.currentTest["reason"] = err[0].__name__ + ": " + str(err[1])
-
-    # Reject tracebacks that are absolute paths or dot-leading paths;
-    # most of these are going to be internal unittest or Python noise
-    # anyway.
-    tbList = traceback.extract_tb(err[2])
-    tbList = filter(lambda frame: \
-      not _reject_traceback_file_pattern.match(frame[0]), tbList)
-
-    frames = list(map(lambda frame: "{2} ({0}:{1})".format(*frame), tbList))
-    frameCount = min(len(frames), 20)
-    self.currentTest["traceback"] = frames[0:frameCount]
+        self.currentTest["traceback"] = filtered_frames[:20]

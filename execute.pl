@@ -106,6 +106,9 @@ my $can_proceed      = 1;
 my $timeout_occurred = 0;
 my $score            = 0;
 my $python           = $cfg->getProperty('pythonCmd', 'python');
+my $execEngine       = $cfg->getProperty('executionEngine', 'docker');
+my $containerImage   = $cfg->getProperty('containerImage', 'webcat/jupyter-plugin:latest');
+my $containerArgs    = $cfg->getProperty('containerArgs', '--network none --memory 1g --cpus 1.0 --pids-limit 100');
 
 
 #=============================================================================
@@ -244,7 +247,6 @@ if (1)
     print TESTS<<END;
 import sys
 import pythy
-import nose.tools
 $imports
 
 # =============================================================================
@@ -308,8 +310,29 @@ if ($isStaff)
 if ($can_proceed)
 {
     my $outfile = $resultDir . "/instr-out.txt";
-    my $cmdline = "$Web_CAT::Utilities::SHELL"
-        . "$python -m pythy.runner > \"$outfile\"  2>&1";
+    my $cmdline;
+
+    if ($execEngine eq 'docker' || $execEngine eq 'podman')
+    {
+        my $uid = $<;
+        my $gid = $( + 0;
+        my $userArg = ($uid && $gid) ? "--user $uid:$gid" : "";
+
+        $cmdline = "$Web_CAT::Utilities::SHELL"
+            . "$execEngine run --rm $containerArgs $userArg "
+            . "-v \"$workingDir:$workingDir:rw\" "
+            . "-v \"$resultDir:$resultDir:rw\" "
+            . "-v \"$pluginHome/pythonlib:/opt/webcat/pythonlib:ro\" "
+            . "-w \"$workingDir\" "
+            . "-e \"PYTHONPATH=$resultDir/pythonlib:/opt/webcat/pythonlib:.:src\" "
+            . "\"$containerImage\" "
+            . "python -m pythy.runner > \"$outfile\" 2>&1";
+    }
+    else
+    {
+        $cmdline = "$Web_CAT::Utilities::SHELL"
+            . "$python -m pythy.runner > \"$outfile\"  2>&1";
+    }
 
     print "cmdline = ", $cmdline, "\n" if $debug;
 
@@ -429,9 +452,26 @@ $cfg->setProperty( 'numCodeMarkups', $numCodeMarkups );
 
 # Pretty-print student notebook
 {
-    my $cmdline = "$Web_CAT::Utilities::SHELL"
-        . "jupyter nbconvert --to html --template full "
-        . "\"$studentNotebook\" --output $resultDir/public/notebook.html";
+    my $cmdline;
+    if ($execEngine eq 'docker' || $execEngine eq 'podman')
+    {
+        my $uid = $<;
+        my $gid = $( + 0;
+        my $userArg = ($uid && $gid) ? "--user $uid:$gid" : "";
+        $cmdline = "$Web_CAT::Utilities::SHELL"
+            . "$execEngine run --rm $containerArgs $userArg "
+            . "-v \"$resultDir:$resultDir:rw\" "
+            . "-w \"$resultDir\" "
+            . "\"$containerImage\" "
+            . "jupyter nbconvert --to html --template full "
+            . "\"$studentNotebook\" --output \"$resultDir/public/notebook.html\"";
+    }
+    else
+    {
+        $cmdline = "$Web_CAT::Utilities::SHELL"
+            . "jupyter nbconvert --to html --template full "
+            . "\"$studentNotebook\" --output $resultDir/public/notebook.html";
+    }
     print $cmdline, "\n" if $debug;
     system($cmdline . " > $resultDir/nbconvert.log 2>&1");
     if (-f "$resultDir/public/notebook.html")

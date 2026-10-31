@@ -198,7 +198,7 @@ sub extract_imports {
             for my $line (@{$lines})
             {
                 if ($line =~ /^(from\s+\S+\s+)?import\s/o
-                    && $line !~ /^import\s+(sys|pythy|nose\.tools)\s*$/o)
+                    && $line !~ /^import\s+(sys|pythy)\s*$/o)
                 {
                     $result .= $line;
                 }
