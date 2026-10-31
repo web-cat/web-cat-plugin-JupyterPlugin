@@ -1,11 +1,11 @@
 # Dockerfile for Web-CAT JupyterPlugin grading container
-# Based on the official full Anaconda3 image
-FROM continuumio/anaconda3:latest
+# Pinned to the official Anaconda3 2024.10-1 release (Python 3.12.7)
+FROM continuumio/anaconda3:2024.10-1
 
 # Set environment
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH="/opt/webcat/pythonlib:${PYTHONPATH}"
+ENV PYTHONPATH="/opt/webcat/pythonlib"
 
 # Install Web-CAT python libraries into /opt/webcat/pythonlib
 RUN mkdir -p /opt/webcat/pythonlib
@@ -16,4 +16,3 @@ WORKDIR /sandbox
 
 # Default entrypoint
 CMD ["python", "-m", "pythy.runner"]
-
